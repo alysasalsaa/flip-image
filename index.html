@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FlipImage</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      background: #0f172a;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      color: #f8fafc;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem;
+      gap: 2rem;
+    }
+
+    header { text-align: center; }
+    header h1 { font-size: 1.75rem; font-weight: 700; }
+    header p  { font-size: 0.875rem; color: #94a3b8; margin-top: 0.25rem; }
+
+    /* URL input */
+    .url-bar {
+      display: flex;
+      gap: 8px;
+      width: 100%;
+      max-width: 600px;
+      flex-wrap: wrap;
+    }
+
+    .url-bar input {
+      flex: 1;
+      min-width: 200px;
+      background: #1e293b;
+      border: 1.5px solid #334155;
+      border-radius: 10px;
+      color: #f8fafc;
+      font-size: 0.875rem;
+      padding: 0.55rem 0.9rem;
+      outline: none;
+      font-family: inherit;
+      transition: border-color 0.15s;
+    }
+    .url-bar input:focus { border-color: #6366f1; }
+    .url-bar input.error { border-color: #ef4444; }
+
+    .btn-display {
+      background: #6366f1;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 0.55rem 1.25rem;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      font-family: inherit;
+    }
+    .btn-display:hover { opacity: 0.88; }
+
+    .err-msg {
+      font-size: 0.8rem;
+      color: #ef4444;
+      width: 100%;
+      max-width: 600px;
+      min-height: 1.1rem;
+    }
+
+    /* 2x2 grid */
+    .matrix {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      width: 100%;
+      max-width: 600px;
+    }
+
+    /* Each cell: arrow buttons around the image */
+    .cell {
+      display: grid;
+      grid-template-areas:
+        ".    up   ."
+        "left img  right"
+        ".    down .";
+      grid-template-columns: 36px 1fr 36px;
+      grid-template-rows:    36px 1fr 36px;
+      gap: 4px;
+      align-items: center;
+      justify-items: center;
+    }
+
+    .img-wrap {
+      grid-area: img;
+      width: 100%;
+      aspect-ratio: 1;
+      overflow: hidden;
+      border-radius: 10px;
+      border: 2px solid #334155;
+      background: #1e293b;
+    }
+
+    .img-wrap img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      transition: transform 0.25s ease;
+    }
+
+    /* Arrow buttons */
+    .arrow {
+      border: none;
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #94a3b8;
+      border-radius: 8px;
+      width: 32px; height: 32px;
+      font-size: 0.9rem;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.12s, color 0.12s, transform 0.08s;
+    }
+    .arrow:hover  { background: #334155; color: #f8fafc; }
+    .arrow:active { transform: scale(0.9); }
+
+    .arrow[data-dir="up"]    { grid-area: up; }
+    .arrow[data-dir="down"]  { grid-area: down; }
+    .arrow[data-dir="left"]  { grid-area: left; }
+    .arrow[data-dir="right"] { grid-area: right; }
+
+    /* Label */
+    .cell-label {
+      font-size: 0.7rem;
+      color: #475569;
+      text-align: center;
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>FlipImage</h1>
+    <p>Use the arrows to flip each image independently</p>
+  </header>
+
+  <div class="url-bar">
+    <input type="text" id="url-input" placeholder="Enter image URL..." />
+    <button class="btn-display" onclick="loadImage()">Display</button>
+  </div>
+  <p class="err-msg" id="err-msg"></p>
+
+  <div class="matrix" id="matrix"></div>
+
+  <script>
+    const DEFAULT_IMG = 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&q=80';
+
+    // Each cell: { flipX: bool, flipY: bool }
+    const state = [
+      { flipX: false, flipY: false },
+      { flipX: false, flipY: false },
+      { flipX: false, flipY: false },
+      { flipX: false, flipY: false },
+    ];
+
+    let currentSrc = DEFAULT_IMG;
+
+    const LABELS = ['Top Left', 'Top Right', 'Bottom Left', 'Bottom Right'];
+
+    function buildMatrix(src) {
+      const matrix = document.getElementById('matrix');
+      matrix.innerHTML = '';
+
+      state.forEach((s, i) => {
+        // wrapper div for cell + label
+        const wrapper = document.createElement('div');
+
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+
+        // Image
+        const imgWrap = document.createElement('div');
+        imgWrap.className = 'img-wrap';
+        const img = document.createElement('img');
+        img.src = src;
+        img.alt = 'Image ' + (i + 1);
+        img.id = 'img-' + i;
+        applyTransform(img, s);
+        imgWrap.appendChild(img);
+
+        // Arrows
+        ['up','down','left','right'].forEach(dir => {
+          const btn = document.createElement('button');
+          btn.className = 'arrow';
+          btn.dataset.dir = dir;
+          btn.title = dir.charAt(0).toUpperCase() + dir.slice(1);
+          btn.textContent = { up:'↑', down:'↓', left:'←', right:'→' }[dir];
+          btn.addEventListener('click', () => flipImage(i, dir));
+          cell.appendChild(btn);
+        });
+
+        cell.appendChild(imgWrap);
+
+        const label = document.createElement('p');
+        label.className = 'cell-label';
+        label.textContent = LABELS[i];
+
+        wrapper.appendChild(cell);
+        wrapper.appendChild(label);
+        matrix.appendChild(wrapper);
+      });
+    }
+
+    function applyTransform(img, s) {
+      const sx = s.flipX ? -1 : 1;
+      const sy = s.flipY ? -1 : 1;
+      img.style.transform = `scale(${sx}, ${sy})`;
+    }
+
+    function flipImage(idx, dir) {
+      const s = state[idx];
+      if (dir === 'left' || dir === 'right') s.flipX = !s.flipX;
+      if (dir === 'up'   || dir === 'down')  s.flipY = !s.flipY;
+      const img = document.getElementById('img-' + idx);
+      applyTransform(img, s);
+    }
+
+    function loadImage() {
+      const input  = document.getElementById('url-input');
+      const errMsg = document.getElementById('err-msg');
+      const url    = input.value.trim();
+
+      if (!url) {
+        input.classList.add('error');
+        errMsg.textContent = 'Please enter an image URL.';
+        return;
+      }
+
+      input.classList.remove('error');
+      errMsg.textContent = '';
+
+      const testImg = new Image();
+      testImg.onload = () => {
+        currentSrc = url;
+        // reset flip states
+        state.forEach(s => { s.flipX = false; s.flipY = false; });
+        buildMatrix(currentSrc);
+        errMsg.textContent = '';
+      };
+      testImg.onerror = () => {
+        input.classList.add('error');
+        errMsg.textContent = 'Error: image URL not found or could not be loaded.';
+      };
+      testImg.src = url;
+    }
+
+    // Enter key triggers load
+    document.getElementById('url-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') loadImage();
+    });
+
+    buildMatrix(currentSrc);
+  </script>
+</body>
+</html>
